@@ -1,0 +1,20 @@
+{
+  "name": "anki-kashikoi-mcp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/junya-ishibuchi/anki-kashikoi-mcp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp/issues"
+  },
+  "homepage": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp#readme",
+  "description": ""
+}
