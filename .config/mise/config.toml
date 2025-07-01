@@ -1,0 +1,3 @@
+[tasks.cc-danger]
+description = "Run the Claude Code container with --dangerously-skip-permissions"
+run = "docker compose up -d claude-code && docker compose exec claude-code claude --dangerously-skip-permissions"
