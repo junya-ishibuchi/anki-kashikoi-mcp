@@ -42,3 +42,19 @@ src/main/resources/dist/*
 /bin/
 .DS_Store
 /src/main/kotlin/com/sourcegraph/cody/agent/protocol_generated/*
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Environment
+.env
+.env.local
