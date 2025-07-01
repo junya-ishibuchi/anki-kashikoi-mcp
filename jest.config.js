@@ -8,10 +8,14 @@ export default {
     '^.+\\.ts$': ['ts-jest', {
       useESM: true,
       tsconfig: {
-        module: 'ES2022',
-        target: 'Node16'
+        module: 'Node16',
+        target: 'ES2022',
+        moduleResolution: 'Node16'
       }
     }]
+  },
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1'
   },
   collectCoverageFrom: [
     'src/**/*.ts',
