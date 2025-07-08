@@ -3,18 +3,16 @@
 import { AnkiMCPServer } from './services/anki-mcp-server.js';
 import { AnkiConnectClient } from './services/anki-connect-client.js';
 import { ConfigurationManager } from './services/configuration-manager.js';
-import { FieldMapper } from './services/field-mapper.js';
 import { DeckAnalyzer } from './services/deck-analyzer.js';
 
 async function main(): Promise<void> {
   // Initialize all services
   const ankiClient = new AnkiConnectClient();
   const configManager = new ConfigurationManager();
-  const fieldMapper = new FieldMapper();
-  const deckAnalyzer = new DeckAnalyzer(ankiClient, fieldMapper);
+  const deckAnalyzer = new DeckAnalyzer(ankiClient);
 
   // Create and run the MCP server
-  const server = new AnkiMCPServer(ankiClient, configManager, fieldMapper, deckAnalyzer);
+  const server = new AnkiMCPServer(ankiClient, configManager, deckAnalyzer);
   await server.run();
 }
 
@@ -31,6 +29,6 @@ process.on('SIGTERM', () => {
 
 // Run the server
 main().catch((error) => {
-  console.error('Failed to start Dynamic Anki MCP Server:', error);
+  console.error('Failed to start Anki Kashikoi MCP Server:', error);
   process.exit(1);
 });

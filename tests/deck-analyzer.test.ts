@@ -1,274 +1,235 @@
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { DeckAnalyzer } from '../src/services/deck-analyzer.js';
 import type { AnkiConnectClient } from '../src/services/anki-connect-client.js';
-import type { FieldMapper } from '../src/services/field-mapper.js';
-import type { AnkiCard, DeckAnalysisResult } from '../src/types/index.js';
-
-// Mock dependencies
-const mockAnkiClient = {
-  findCards: jest.fn(),
-  getCardsInfo: jest.fn(),
-} as jest.Mocked<Pick<AnkiConnectClient, 'findCards' | 'getCardsInfo'>>;
-
-const mockFieldMapper = {
-  suggestMappings: jest.fn(),
-} as jest.Mocked<Pick<FieldMapper, 'suggestMappings'>>;
+import type { AnkiCard } from '../src/types/index.js';
+import { createMockAnkiCard } from './test-utils.js';
 
 describe('DeckAnalyzer', () => {
   let deckAnalyzer: DeckAnalyzer;
-
-  const createMockCard = (cardId: number, fields: Record<string, string>, modelName = 'Basic', deckName = 'TestDeck'): AnkiCard => ({
-    cardId,
-    fields: Object.fromEntries(
-      Object.entries(fields).map(([key, value], index) => [key, { value, order: index }])
-    ),
-    fieldOrder: 0,
-    question: '',
-    answer: '',
-    modelName,
-    deckName,
-    css: '',
-    factor: 0,
-    interval: 0,
-    note: 0,
-    type: 0,
-    queue: 0,
-    due: 0,
-    reps: 0,
-    lapses: 0,
-    left: 0,
-    odue: 0,
-    odid: 0,
-    mod: 0,
-    usn: 0,
-  });
+  let mockAnkiClient: jest.Mocked<AnkiConnectClient>;
 
   beforeEach(() => {
-    deckAnalyzer = new DeckAnalyzer(mockAnkiClient as unknown as AnkiConnectClient, mockFieldMapper as unknown as FieldMapper);
-    jest.clearAllMocks();
+    mockAnkiClient = {
+      findCards: jest.fn(),
+      getCardsInfo: jest.fn(),
+      getModelFieldNames: jest.fn(),
+      // Other methods not used in DeckAnalyzer
+      getDeckNames: jest.fn(),
+      getNoteTypes: jest.fn(),
+      createDeck: jest.fn(),
+      addNote: jest.fn(),
+      sendRequest: jest.fn()
+    } as any;
+
+    deckAnalyzer = new DeckAnalyzer(mockAnkiClient);
   });
 
   describe('analyzeDeck', () => {
-    it('should analyze deck and return results', async () => {
-      const mockCardIds = [1, 2, 3, 4, 5];
-      const mockCardsInfo: AnkiCard[] = [
-        createMockCard(1, { Front: 'Hello', Back: 'こんにちは' }, 'Basic', 'Japanese'),
-        createMockCard(2, { Front: 'Good morning', Back: 'おはよう' }, 'Basic', 'Japanese'),
+    it('should analyze deck and return deck information', async () => {
+      const mockCards: AnkiCard[] = [
+        createMockAnkiCard({
+          cardId: 1,
+          modelName: 'Japanese (recognition)',
+          fields: {
+            'Expression': { value: '勉強', order: 0 },
+            'Reading': { value: 'べんきょう', order: 1 },
+            'Meaning': { value: 'study', order: 2 },
+            'Sentence': { value: '毎日勉強します。', order: 3 }
+          },
+          deckName: 'Japanese Vocabulary',
+          note: 1
+        }),
+        createMockAnkiCard({
+          cardId: 2,
+          modelName: 'Japanese (recognition)',
+          fields: {
+            'Expression': { value: '本', order: 0 },
+            'Reading': { value: 'ほん', order: 1 },
+            'Meaning': { value: 'book', order: 2 },
+            'Sentence': { value: '本を読みます。', order: 3 }
+          },
+          deckName: 'Japanese Vocabulary',
+          note: 2
+        })
       ];
 
-      mockAnkiClient.findCards.mockResolvedValueOnce(mockCardIds);
-      mockAnkiClient.getCardsInfo.mockResolvedValueOnce(mockCardsInfo);
-      mockFieldMapper.suggestMappings.mockReturnValueOnce({
-        primary: 'Front',
-        secondary: 'Back',
+      mockAnkiClient.findCards.mockResolvedValue([1, 2, 3, 4, 5]);
+      mockAnkiClient.getCardsInfo.mockResolvedValue(mockCards);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Expression', 'Reading', 'Meaning', 'Sentence']);
+
+      const result = await deckAnalyzer.analyzeDeck('Japanese Vocabulary', 5);
+
+      expect(result).toEqual({
+        deckName: 'Japanese Vocabulary',
+        noteType: 'Japanese (recognition)',
+        fields: ['Expression', 'Reading', 'Meaning', 'Sentence'],
+        sampleSize: 2
       });
-
-      const result = await deckAnalyzer.analyzeDeck('Japanese', 2);
-
-      expect(mockAnkiClient.findCards).toHaveBeenCalledWith('deck:"Japanese"');
-      expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1, 2]);
-      
-      expect(result.deckName).toBe('Japanese');
-      expect(result.sampleSize).toBe(2);
-      expect(result.primaryNoteType).toBe('Basic');
-      expect(result.fieldAnalysis).toHaveProperty('Front');
-      expect(result.fieldAnalysis).toHaveProperty('Back');
-      expect(result.suggestedMappings).toEqual({
-        primary: 'Front',
-        secondary: 'Back',
-      });
-    });
-
-    it('should handle empty deck gracefully', async () => {
-      mockAnkiClient.findCards.mockResolvedValueOnce([]);
-
-      await expect(deckAnalyzer.analyzeDeck('EmptyDeck'))
-        .rejects.toThrow('Deck "EmptyDeck" contains no cards');
-
-      expect(mockAnkiClient.findCards).toHaveBeenCalledWith('deck:"EmptyDeck"');
-      expect(mockAnkiClient.getCardsInfo).not.toHaveBeenCalled();
-    });
-
-    it('should use default sample size when not specified', async () => {
-      const mockCardIds = [1, 2, 3, 4, 5, 6, 7, 8];
-      const mockCardsInfo: AnkiCard[] = Array.from({ length: 5 }, (_, i) => 
-        createMockCard(i + 1, { Front: `Question ${i + 1}`, Back: `Answer ${i + 1}` })
-      );
-
-      mockAnkiClient.findCards.mockResolvedValueOnce(mockCardIds);
-      mockAnkiClient.getCardsInfo.mockResolvedValueOnce(mockCardsInfo);
-      mockFieldMapper.suggestMappings.mockReturnValueOnce({});
-
-      const result = await deckAnalyzer.analyzeDeck('TestDeck');
-
+      expect(mockAnkiClient.findCards).toHaveBeenCalledWith('deck:"Japanese Vocabulary"');
       expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1, 2, 3, 4, 5]);
-      expect(result.sampleSize).toBe(5);
+      expect(mockAnkiClient.getModelFieldNames).toHaveBeenCalledWith('Japanese (recognition)');
     });
 
-    it('should handle multiple note types and select primary', async () => {
-      const mockCardIds = [1, 2, 3];
-      const mockCardsInfo: AnkiCard[] = [
-        createMockCard(1, { Front: 'Test' }),
-        createMockCard(2, { Text: 'Cloze test' }, 'Cloze'),
-        createMockCard(3, { Front: 'Another' }),
+    it('should handle multiple note types and select the most common', async () => {
+      const mockCards: AnkiCard[] = [
+        createMockAnkiCard({
+          cardId: 1,
+          modelName: 'Japanese (recognition)'
+        }),
+        createMockAnkiCard({
+          cardId: 2,
+          modelName: 'Japanese (recognition)'
+        }),
+        createMockAnkiCard({
+          cardId: 3,
+          modelName: 'Basic'
+        })
       ];
 
-      mockAnkiClient.findCards.mockResolvedValueOnce(mockCardIds);
-      mockAnkiClient.getCardsInfo.mockResolvedValueOnce(mockCardsInfo);
-      mockFieldMapper.suggestMappings.mockReturnValueOnce({});
+      mockAnkiClient.findCards.mockResolvedValue([1, 2, 3]);
+      mockAnkiClient.getCardsInfo.mockResolvedValue(mockCards);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Expression', 'Reading', 'Meaning', 'Sentence']);
 
-      const result = await deckAnalyzer.analyzeDeck('TestDeck');
+      const result = await deckAnalyzer.analyzeDeck('Mixed Deck');
 
-      expect(result.primaryNoteType).toBe('Basic'); // Most frequent note type
+      expect(result.noteType).toBe('Japanese (recognition)');
     });
 
     it('should limit sample size to available cards', async () => {
-      const mockCardIds = [1, 2]; // Only 2 cards available
-      const mockCardsInfo: AnkiCard[] = [
-        createMockCard(1, { Front: 'Test1' }, 'Basic', 'SmallDeck'),
-        createMockCard(2, { Front: 'Test2' }, 'Basic', 'SmallDeck'),
-      ];
+      mockAnkiClient.findCards.mockResolvedValue([1, 2]);
+      mockAnkiClient.getCardsInfo.mockResolvedValue([
+        createMockAnkiCard({
+          cardId: 1,
+          modelName: 'Basic'
+        }),
+        createMockAnkiCard({
+          cardId: 2,
+          modelName: 'Basic'
+        })
+      ]);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
-      mockAnkiClient.findCards.mockResolvedValueOnce(mockCardIds);
-      mockAnkiClient.getCardsInfo.mockResolvedValueOnce(mockCardsInfo);
-      mockFieldMapper.suggestMappings.mockReturnValueOnce({});
+      const result = await deckAnalyzer.analyzeDeck('Small Deck', 10);
 
-      const result = await deckAnalyzer.analyzeDeck('SmallDeck', 10); // Request 10 but only 2 available
-
-      expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1, 2]);
       expect(result.sampleSize).toBe(2);
+      expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1, 2]);
+    });
+
+    it('should throw error when deck has no cards', async () => {
+      mockAnkiClient.findCards.mockResolvedValue([]);
+
+      await expect(deckAnalyzer.analyzeDeck('Empty Deck')).rejects.toThrow('Deck "Empty Deck" contains no cards');
+    });
+
+    it('should use default sample size of 5', async () => {
+      mockAnkiClient.findCards.mockResolvedValue([1, 2, 3, 4, 5, 6, 7, 8]);
+      mockAnkiClient.getCardsInfo.mockResolvedValue([]);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue([]);
+
+      await deckAnalyzer.analyzeDeck('Large Deck');
+
+      expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1, 2, 3, 4, 5]);
     });
   });
 
-  describe('analyzeFieldContent', () => {
-    it('should analyze field content and return purpose description', () => {
-      const samples = ['Hello', 'Good morning', 'How are you?'];
-      
-      const result = deckAnalyzer.analyzeFieldContent('Front', samples);
-      
-      expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
+  describe('getFieldsForDeck', () => {
+    it('should return deck configuration', async () => {
+      mockAnkiClient.findCards.mockResolvedValue([1]);
+      mockAnkiClient.getCardsInfo.mockResolvedValue([
+        createMockAnkiCard({
+          cardId: 1,
+          modelName: 'Japanese (recognition)'
+        })
+      ]);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Expression', 'Reading', 'Meaning', 'Sentence']);
+
+      const result = await deckAnalyzer.getFieldsForDeck('Japanese');
+
+      expect(result).toEqual({
+        noteType: 'Japanese (recognition)',
+        fields: ['Expression', 'Reading', 'Meaning', 'Sentence']
+      });
     });
 
-    it('should identify pronunciation fields', () => {
-      const samples = ['/həˈloʊ/', '/ˈmɔrnɪŋ/', '/haʊ/'];
-      
-      const result = deckAnalyzer.analyzeFieldContent('Pronunciation', samples);
-      
-      expect(result).toContain('pronunciation');
-    });
+    it('should use sample size of 1 for efficiency', async () => {
+      mockAnkiClient.findCards.mockResolvedValue([1, 2, 3, 4, 5]);
+      mockAnkiClient.getCardsInfo.mockResolvedValue([
+        createMockAnkiCard({
+          cardId: 1,
+          modelName: 'Basic'
+        })
+      ]);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
-    it('should identify example sentence fields', () => {
-      const samples = [
-        'Example: I said hello to my friend.',
-        'Usage: Good morning everyone!',
-        'Sentence: How are you today?',
-      ];
-      
-      const result = deckAnalyzer.analyzeFieldContent('Examples', samples);
-      
-      expect(result).toContain('example');
-    });
+      await deckAnalyzer.getFieldsForDeck('Efficiency Test');
 
-    it('should identify long content fields', () => {
-      const samples = [
-        'This is a very long detailed explanation that goes on for quite a while and contains lots of information',
-        'Another lengthy description with multiple sentences. It provides comprehensive details about the topic.',
-      ];
-      
-      const result = deckAnalyzer.analyzeFieldContent('Description', samples);
-      
-      expect(result.includes('Detailed') || result.includes('Long')).toBe(true);
-    });
-
-    it('should identify short content fields', () => {
-      const samples = ['Hi', 'Yes', 'No', 'OK'];
-      
-      const result = deckAnalyzer.analyzeFieldContent('Answer', samples);
-      
-      expect(result).toContain('Short');
+      expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1]);
     });
   });
 
   describe('generateReport', () => {
-    it('should generate formatted analysis report', () => {
-      const analysisResult: DeckAnalysisResult = {
-        deckName: 'TestDeck',
-        sampleSize: 3,
-        primaryNoteType: 'Basic',
-        fieldAnalysis: {
-          Front: 'Short questions',
-          Back: 'Brief answers',
-        },
-        suggestedMappings: {
-          primary: 'Front',
-          secondary: 'Back',
-        },
+    it('should generate formatted report', () => {
+      const analysisResult = {
+        deckName: 'Japanese Vocabulary',
+        noteType: 'Japanese (recognition)',
+        fields: ['Expression', 'Reading', 'Meaning', 'Sentence'],
+        sampleSize: 5
       };
 
       const report = deckAnalyzer.generateReport(analysisResult);
 
-      expect(report).toContain('TestDeck');
-      expect(report).toContain('3');
-      expect(report).toContain('Basic');
-      expect(report).toContain('Front');
-      expect(report).toContain('Back');
-      expect(report).toContain('Short questions');
-      expect(report).toContain('Brief answers');
-      expect(report).toContain('primary → Front');
-      expect(report).toContain('secondary → Back');
+      expect(report).toContain('=== Deck Analysis Report ===');
+      expect(report).toContain('Deck: Japanese Vocabulary');
+      expect(report).toContain('Note Type: Japanese (recognition)');
+      expect(report).toContain('Sample size: 5');
+      expect(report).toContain('Fields:');
+      expect(report).toContain('- Expression');
+      expect(report).toContain('- Reading');
+      expect(report).toContain('- Meaning');
+      expect(report).toContain('- Sentence');
     });
 
-    it('should handle empty mappings gracefully', () => {
-      const analysisResult: DeckAnalysisResult = {
-        deckName: 'TestDeck',
-        sampleSize: 1,
-        primaryNoteType: 'Basic',
-        fieldAnalysis: { Field1: 'Unknown content' },
-        suggestedMappings: {},
+    it('should handle empty fields array', () => {
+      const analysisResult = {
+        deckName: 'Empty Deck',
+        noteType: 'Basic',
+        fields: [],
+        sampleSize: 0
       };
 
       const report = deckAnalyzer.generateReport(analysisResult);
 
-      expect(report).toContain('TestDeck');
-      expect(report).toContain('No semantic mappings suggested');
+      expect(report).toContain('Fields:');
+      expect(report).toContain('Sample size: 0');
     });
   });
 
-  describe('getFieldSamples', () => {
-    it('should extract field samples from cards', () => {
-      const cards: AnkiCard[] = [
-        createMockCard(1, { Front: 'Question 1', Back: 'Answer 1' }),
-        createMockCard(2, { Front: 'Question 2', Back: 'Answer 2' }),
+  describe('edge cases', () => {
+    it('should handle cards with missing modelName gracefully', async () => {
+      const mockCards = [
+        createMockAnkiCard({
+          cardId: 1,
+          modelName: ''
+        }),
+        createMockAnkiCard({
+          cardId: 2,
+          modelName: 'Basic'
+        })
       ];
 
-      const samples = deckAnalyzer.getFieldSamples(cards);
+      mockAnkiClient.findCards.mockResolvedValue([1, 2]);
+      mockAnkiClient.getCardsInfo.mockResolvedValue(mockCards);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
-      expect(samples).toHaveProperty('Front');
-      expect(samples).toHaveProperty('Back');
-      expect(samples.Front).toEqual(['Question 1', 'Question 2']);
-      expect(samples.Back).toEqual(['Answer 1', 'Answer 2']);
+      const result = await deckAnalyzer.analyzeDeck('Test Deck');
+
+      expect(result.noteType).toBe('Basic');
     });
 
-    it('should handle empty field values', () => {
-      const cards: AnkiCard[] = [
-        createMockCard(1, { Front: 'Question', Back: '' }),
-      ];
+    it('should handle API errors appropriately', async () => {
+      mockAnkiClient.findCards.mockRejectedValue(new Error('Network error'));
 
-      const samples = deckAnalyzer.getFieldSamples(cards);
-
-      expect(samples.Front).toEqual(['Question']);
-      expect(samples.Back).toEqual([]);
-    });
-
-    it('should truncate long field values', () => {
-      const longText = 'A'.repeat(100);
-      const cards: AnkiCard[] = [
-        createMockCard(1, { Front: longText }),
-      ];
-
-      const samples = deckAnalyzer.getFieldSamples(cards);
-
-      expect(samples.Front[0].length).toBeLessThanOrEqual(50);
+      await expect(deckAnalyzer.analyzeDeck('Test Deck')).rejects.toThrow('Network error');
     });
   });
 });

@@ -83,4 +83,8 @@ export class AnkiConnectClient {
   async getCardsInfo(cardIds: number[]): Promise<AnkiCard[]> {
     return this.sendRequest<AnkiCard[]>('cardsInfo', { cards: cardIds });
   }
+
+  async getModelFieldNames(modelName: string): Promise<string[]> {
+    return this.sendRequest<string[]>('modelFieldNames', { modelName });
+  }
 }

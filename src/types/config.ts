@@ -1,32 +1,16 @@
-export interface UserConfig {
-  readonly preferredDeck: string;
-  readonly preferredNoteType: string;
-  readonly fieldMappings: Record<string, string>;
-}
-
-export interface ConfigOptions {
-  readonly deck: string;
+// Direct field mapping types
+export interface DeckConfig {
   readonly noteType: string;
-  readonly fieldMappings?: Record<string, string>;
+  readonly fields: readonly string[];
 }
 
-export interface SmartCardContent {
-  readonly content: Record<string, string>;
+export interface UserConfigNew {
+  readonly decks: Record<string, DeckConfig>;
+  readonly defaultDeck?: string;
+}
+
+export interface AddCardParams {
   readonly deck?: string;
-  readonly noteType?: string;
+  readonly content: Record<string, string>;
   readonly tags?: readonly string[];
-}
-
-export interface FieldMappingSuggestion {
-  readonly semantic: string;
-  readonly field: string;
-  readonly confidence: number;
-}
-
-export interface DeckAnalysisResult {
-  readonly deckName: string;
-  readonly sampleSize: number;
-  readonly primaryNoteType: string;
-  readonly fieldAnalysis: Record<string, string>;
-  readonly suggestedMappings: Record<string, string>;
 }

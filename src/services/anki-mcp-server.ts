@@ -8,33 +8,23 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { AnkiConnectClient } from './anki-connect-client.js';
 import type { ConfigurationManager } from './configuration-manager.js';
-import type { FieldMapper } from './field-mapper.js';
 import type { DeckAnalyzer } from './deck-analyzer.js';
 import type {
-  UserConfig,
-  AnkiNoteType,
-  ToolResponse,
-  ConfigureAnkiSetupArgs,
-  AddSmartCardArgs,
-  SuggestFieldMappingArgs,
-  AnalyzeExistingDeckArgs,
-  AutoConfigureFromDeckArgs,
+  AddCardParams,
+  ToolResponse
 } from '../types/index.js';
 
 export class AnkiMCPServer {
   private server: Server;
-  private userConfig: UserConfig | null = null;
-  private availableNoteTypes: AnkiNoteType[] = [];
 
   constructor(
     private readonly ankiClient: AnkiConnectClient,
     private readonly configManager: ConfigurationManager,
-    private readonly fieldMapper: FieldMapper,
     private readonly deckAnalyzer: DeckAnalyzer
   ) {
     this.server = new Server(
       {
-        name: 'dynamic-anki-server',
+        name: 'anki-kashikoi-mcp',
         version: '1.0.0',
       },
       {
@@ -47,368 +37,255 @@ export class AnkiMCPServer {
     this.setupToolHandlers();
   }
 
-  async initializeUserConfig(): Promise<void> {
-    if (!this.userConfig) {
-      this.availableNoteTypes = await this.ankiClient.getNoteTypes();
-      this.userConfig = await this.configManager.loadConfig();
-    }
-  }
-
-  async configureAnkiSetup(args: ConfigureAnkiSetupArgs): Promise<ToolResponse> {
-    await this.initializeUserConfig();
-
+  async analyzeDeckAndSaveConfig(deckName: string): Promise<ToolResponse> {
     try {
-      await this.ankiClient.createDeck(args.deck);
-    } catch (error) {
-      console.error(`Deck creation error (possibly already exists): ${error}`);
-    }
-
-    this.userConfig = {
-      preferredDeck: args.deck,
-      preferredNoteType: args.noteType,
-      fieldMappings: args.fieldMappings || this.userConfig?.fieldMappings || {},
-    };
-
-    await this.configManager.saveConfig(this.userConfig);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Anki configuration updated:\\n` +
-            `Deck: ${args.deck}\\n` +
-            `Note type: ${args.noteType}\\n` +
-            `Configuration file: ${this.configManager.getConfigPath()}\\n` +
-            `Field mappings:\\n${JSON.stringify(args.fieldMappings, null, 2)}`,
-        },
-      ],
-    };
-  }
-
-  async getAnkiInfo(): Promise<ToolResponse> {
-    await this.initializeUserConfig();
-
-    const decks = await this.ankiClient.getDeckNames();
-
-    let info = `=== Anki Information ===\\n\\n`;
-    info += `Available decks:\\n${decks.map((d: string) => `- ${d}`).join('\\n')}\\n\\n`;
-    info += `Available note types and fields:\\n`;
-
-    for (const noteType of this.availableNoteTypes) {
-      info += `- ${noteType.name}: [${noteType.fields.join(', ')}]\\n`;
-    }
-
-    info += `\\nCurrent configuration:\\n`;
-    info += `- Default deck: ${this.userConfig?.preferredDeck}\\n`;
-    info += `- Default note type: ${this.userConfig?.preferredNoteType}\\n`;
-    info += `- Field mappings: ${JSON.stringify(this.userConfig?.fieldMappings, null, 2)}`;
-
-    return {
-      content: [{ type: 'text', text: info }],
-    };
-  }
-
-  async addSmartCard(args: AddSmartCardArgs): Promise<ToolResponse> {
-    await this.initializeUserConfig();
-
-    const deck = args.deck || this.userConfig!.preferredDeck;
-    const noteType = args.noteType || this.userConfig!.preferredNoteType;
-
-    const mappedFields = this.fieldMapper.applyMapping(
-      this.userConfig!.fieldMappings,
-      args.content
-    );
-
-    if (Object.keys(mappedFields).length === 0) {
-      throw new Error('No fields were mapped. Please check your configuration.');
-    }
-
-    const note = {
-      deckName: deck,
-      modelName: noteType,
-      fields: mappedFields,
-      tags: args.tags || [],
-    };
-
-    const noteId = await this.ankiClient.addNote(note);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Smart card added successfully!\\n` +
-            `Note ID: ${noteId}\\n` +
-            `Deck: ${deck}\\n` +
-            `Note type: ${noteType}\\n` +
-            `Mapped fields:\\n${Object.entries(mappedFields)
-              .map(([field, value]) => `- ${field}: ${value}`)
-              .join('\\n')}`,
-        },
-      ],
-    };
-  }
-
-  async suggestFieldMapping(args: SuggestFieldMappingArgs): Promise<ToolResponse> {
-    await this.initializeUserConfig();
-
-    const noteType = this.availableNoteTypes.find(nt => nt.name === args.noteType);
-    if (!noteType) {
-      throw new Error(`Note type "${args.noteType}" not found.`);
-    }
-
-    const suggestions = this.fieldMapper.suggestMappings(noteType);
-
-    let suggestionText = `Recommended field mappings for note type "${args.noteType}":\\n\\n`;
-    suggestionText += `Available fields: [${noteType.fields.join(', ')}]\\n\\n`;
-    suggestionText += `Recommended mappings:\\n`;
-
-    for (const [semantic, field] of Object.entries(suggestions)) {
-      suggestionText += `- ${semantic} → ${field}\\n`;
-    }
-
-    suggestionText += `\\nUsage:\\nUse the configure_anki_setup tool to apply these mappings.`;
-
-    return {
-      content: [{ type: 'text', text: suggestionText }],
-    };
-  }
-
-  async analyzeExistingDeck(args: AnalyzeExistingDeckArgs): Promise<ToolResponse> {
-    await this.initializeUserConfig();
-
-    const analysisResult = await this.deckAnalyzer.analyzeDeck(
-      args.deck,
-      args.sampleSize || 5
-    );
-
-    const report = this.deckAnalyzer.generateReport(analysisResult);
-
-    return {
-      content: [{ type: 'text', text: report }],
-    };
-  }
-
-  async autoConfigureFromDeck(args: AutoConfigureFromDeckArgs): Promise<ToolResponse> {
-    const analysis = await this.deckAnalyzer.analyzeDeck(args.deck);
-
-    if (!args.confirm) {
+      const deckConfig = await this.deckAnalyzer.getFieldsForDeck(deckName);
+      await this.configManager.addDeckConfig(deckName, deckConfig);
+      
       return {
         content: [
           {
             type: 'text',
-            text: this.deckAnalyzer.generateReport(analysis) +
-              `\\n\\nIf this configuration looks good, run auto_configure_from_deck with confirm: true to apply.`,
+            text: `Deck "${deckName}" analyzed and configured:\\n` +
+              `Note type: ${deckConfig.noteType}\\n` +
+              `Fields: ${deckConfig.fields.join(', ')}\\n` +
+              `Configuration saved to: ${this.configManager.getConfigPath()}`,
           },
         ],
       };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to analyze deck: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  async addCard(params: AddCardParams): Promise<ToolResponse> {
+    const config = await this.configManager.loadConfig();
+    const deckName = params.deck || config.defaultDeck;
+    
+    if (!deckName) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'No deck specified and no default deck configured'
+      );
     }
 
-    const cardIds = await this.ankiClient.findCards(`deck:"${args.deck}"`);
-    const cardsInfo = await this.ankiClient.getCardsInfo([cardIds[0]]);
-    const noteType = cardsInfo[0].modelName;
+    const deckConfig = await this.configManager.getDeckConfig(deckName);
+    if (!deckConfig) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Deck "${deckName}" not configured. Please analyze the deck first.`
+      );
+    }
 
-    return await this.configureAnkiSetup({
-      deck: args.deck,
-      noteType: noteType,
-      fieldMappings: analysis.suggestedMappings,
-    });
+    // Validate that all content fields exist in deck configuration
+    const contentFields = Object.keys(params.content);
+    const invalidFields = contentFields.filter(field => !deckConfig.fields.includes(field));
+    
+    if (invalidFields.length > 0) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Invalid fields for deck "${deckName}": ${invalidFields.join(', ')}. ` +
+        `Valid fields are: ${deckConfig.fields.join(', ')}`
+      );
+    }
+
+    // Fill missing fields with empty strings
+    const fields = deckConfig.fields.reduce((acc, field) => {
+      acc[field] = params.content[field] || '';
+      return acc;
+    }, {} as Record<string, string>);
+
+    try {
+      const noteId = await this.ankiClient.addNote({
+        deckName,
+        modelName: deckConfig.noteType,
+        fields,
+        tags: params.tags || []
+      });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Card added successfully!\\n` +
+              `Note ID: ${noteId}\\n` +
+              `Deck: ${deckName}\\n` +
+              `Note type: ${deckConfig.noteType}`,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Failed to add card: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  async getConfiguredDecks(): Promise<ToolResponse> {
+    const config = await this.configManager.loadConfig();
+    
+    let info = `=== Configured Decks ===\\n\\n`;
+    
+    if (Object.keys(config.decks).length === 0) {
+      info += 'No decks configured yet. Use analyze_deck to configure a deck.\\n';
+    } else {
+      for (const [deckName, deckConfig] of Object.entries(config.decks)) {
+        info += `Deck: ${deckName}`;
+        if (config.defaultDeck === deckName) {
+          info += ' (default)';
+        }
+        info += `\\n`;
+        info += `  Note type: ${deckConfig.noteType}\\n`;
+        info += `  Fields: ${deckConfig.fields.join(', ')}\\n\\n`;
+      }
+    }
+
+    info += `\\nConfiguration file: ${this.configManager.getConfigPath()}`;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: info,
+        },
+      ],
+    };
+  }
+
+  async setDefaultDeck(deckName: string): Promise<ToolResponse> {
+    const deckConfig = await this.configManager.getDeckConfig(deckName);
+    if (!deckConfig) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Deck "${deckName}" not configured. Please analyze the deck first.`
+      );
+    }
+
+    await this.configManager.setDefaultDeck(deckName);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Default deck set to: ${deckName}`,
+        },
+      ],
+    };
   }
 
   private setupToolHandlers(): void {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      await this.initializeUserConfig();
-
-      return {
-        tools: [
-          {
-            name: 'configure_anki_setup',
-            description: 'Initialize and customize Anki configuration (recommended to run first)',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                deck: {
-                  type: 'string',
-                  description: 'Default deck name to use',
-                },
-                noteType: {
-                  type: 'string',
-                  description: 'Default note type to use',
-                },
-                fieldMappings: {
-                  type: 'object',
-                  description: 'Semantic name to actual field name mappings (define as needed)',
-                  additionalProperties: {
-                    type: 'string',
-                    description: 'Actual Anki field name'
-                  },
-                  examples: [
-                    {
-                      "primary": "Front",
-                      "secondary": "Back"
-                    },
-                    {
-                      "question": "Question",
-                      "answer": "Answer",
-                      "hint": "Hint"
-                    },
-                    {
-                      "kanji": "Expression",
-                      "reading": "Reading",
-                      "meaning": "Meaning",
-                      "sentence": "Sentence"
-                    }
-                  ]
-                },
+    this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        {
+          name: 'analyze_deck',
+          description: 'Analyze a deck and save its configuration',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              deck: {
+                type: 'string',
+                description: 'Name of the deck to analyze',
               },
-              required: ['deck', 'noteType'],
             },
+            required: ['deck'],
           },
-          {
-            name: 'get_anki_info',
-            description: 'Get Anki deck, note type, and field information',
-            inputSchema: {
-              type: 'object',
-              properties: {},
-            },
-          },
-          {
-            name: 'add_smart_card',
-            description: 'Add card intelligently based on user configuration',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                content: {
-                  type: 'object',
-                  description: 'Content specified by semantic names (only configured mappings are valid)',
-                  additionalProperties: {
-                    type: 'string',
-                    description: 'Value for any semantic name'
-                  },
-                  examples: [
-                    { "primary": "Hello", "secondary": "こんにちは" },
-                    { "question": "What is 2+2?", "answer": "4", "hint": "Simple addition" },
-                    { "kanji": "日本", "reading": "にほん", "meaning": "Japan" }
-                  ]
-                },
-                deck: {
-                  type: 'string',
-                  description: 'Deck name (uses default if omitted)',
-                },
-                noteType: {
-                  type: 'string',
-                  description: 'Note type (uses default if omitted)',
-                },
-                tags: {
-                  type: 'array',
-                  items: { type: 'string' },
-                  description: 'Tag list',
-                },
+        },
+        {
+          name: 'add_card',
+          description: 'Add a card to Anki using field names directly',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              content: {
+                type: 'object',
+                description: 'Card content with field names as keys',
               },
-              required: ['content'],
-            },
-          },
-          {
-            name: 'suggest_field_mapping',
-            description: 'Suggest recommended field mappings for specified note type',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                noteType: {
-                  type: 'string',
-                  description: 'Note type name',
-                },
+              deck: {
+                type: 'string',
+                description: 'Deck name (optional, uses default if not specified)',
               },
-              required: ['noteType'],
-            },
-          },
-          {
-            name: 'analyze_existing_deck',
-            description: 'Analyze existing deck to generate recommended configuration',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                deck: {
-                  type: 'string',
-                  description: 'Deck name to analyze',
-                },
-                sampleSize: {
-                  type: 'number',
-                  description: 'Number of cards to analyze (default: 5)',
-                  default: 5,
-                },
+              tags: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Tags for the card',
               },
-              required: ['deck'],
             },
+            required: ['content'],
           },
-          {
-            name: 'auto_configure_from_deck',
-            description: 'Automatically configure settings by analyzing existing deck',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                deck: {
-                  type: 'string',
-                  description: 'Base deck name',
-                },
-                confirm: {
-                  type: 'boolean',
-                  description: 'Whether to automatically apply suggested configuration (default: false)',
-                  default: false,
-                },
+        },
+        {
+          name: 'get_configured_decks',
+          description: 'Get information about configured decks',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+          },
+        },
+        {
+          name: 'set_default_deck',
+          description: 'Set the default deck for adding cards',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              deck: {
+                type: 'string',
+                description: 'Name of the deck to set as default',
               },
-              required: ['deck'],
             },
+            required: ['deck'],
           },
-        ],
-      };
-    });
+        },
+      ],
+    }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
+      if (!request.params.arguments) {
+        throw new McpError(ErrorCode.InvalidParams, 'Arguments required');
+      }
 
-      try {
-        let result: ToolResponse;
+      let result: ToolResponse;
 
-        switch (name) {
-          case 'configure_anki_setup':
-            result = await this.configureAnkiSetup(args as unknown as ConfigureAnkiSetupArgs);
-            break;
-
-          case 'get_anki_info':
-            result = await this.getAnkiInfo();
-            break;
-
-          case 'add_smart_card':
-            result = await this.addSmartCard(args as unknown as AddSmartCardArgs);
-            break;
-
-          case 'suggest_field_mapping':
-            result = await this.suggestFieldMapping(args as unknown as SuggestFieldMappingArgs);
-            break;
-
-          case 'analyze_existing_deck':
-            result = await this.analyzeExistingDeck(args as unknown as AnalyzeExistingDeckArgs);
-            break;
-
-          case 'auto_configure_from_deck':
-            result = await this.autoConfigureFromDeck(args as unknown as AutoConfigureFromDeckArgs);
-            break;
-
-          default:
-            throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+      switch (request.params.name) {
+        case 'analyze_deck': {
+          const args = request.params.arguments as { deck: string };
+          result = await this.analyzeDeckAndSaveConfig(args.deck);
+          break;
         }
 
-        return result as any;
-      } catch (error) {
-        throw new McpError(ErrorCode.InternalError, `Tool execution failed: ${error}`);
+        case 'add_card': {
+          const args = request.params.arguments as unknown as AddCardParams;
+          result = await this.addCard(args);
+          break;
+        }
+
+        case 'get_configured_decks':
+          result = await this.getConfiguredDecks();
+          break;
+
+        case 'set_default_deck': {
+          const args = request.params.arguments as { deck: string };
+          result = await this.setDefaultDeck(args.deck);
+          break;
+        }
+
+        default:
+          throw new McpError(
+            ErrorCode.MethodNotFound,
+            `Unknown tool: ${request.params.name}`
+          );
       }
+
+      return result as any;
     });
   }
 
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Dynamic Anki MCP Server running on stdio');
-    console.error(`Configuration file location: ${this.configManager.getConfigPath()}`);
+    console.error('Anki MCP server running on stdio');
   }
 }

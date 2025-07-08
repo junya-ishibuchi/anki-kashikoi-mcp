@@ -1,11 +1,16 @@
 import type { AnkiConnectClient } from './anki-connect-client.js';
-import type { FieldMapper } from './field-mapper.js';
-import type { AnkiCard, DeckAnalysisResult, AnkiNoteType } from '../types/index.js';
+import type { AnkiCard, DeckConfig } from '../types/index.js';
+
+export interface DeckAnalysisResult {
+  readonly deckName: string;
+  readonly noteType: string;
+  readonly fields: readonly string[];
+  readonly sampleSize: number;
+}
 
 export class DeckAnalyzer {
   constructor(
-    private readonly ankiClient: AnkiConnectClient,
-    private readonly fieldMapper: FieldMapper
+    private readonly ankiClient: AnkiConnectClient
   ) {}
 
   async analyzeDeck(deckName: string, sampleSize = 5): Promise<DeckAnalysisResult> {
@@ -20,120 +25,36 @@ export class DeckAnalyzer {
     const cardsInfo = await this.ankiClient.getCardsInfo(sampleCardIds);
 
     const primaryNoteType = this.getPrimaryNoteType(cardsInfo);
-    const fieldSamples = this.getFieldSamples(cardsInfo);
-    const fieldAnalysis = this.analyzeFields(fieldSamples);
-    
-    const mockNoteType: AnkiNoteType = {
-      name: primaryNoteType,
-      fields: Object.keys(fieldSamples),
-    };
-    const suggestedMappings = this.fieldMapper.suggestMappings(mockNoteType);
+    const fields = await this.getFieldsForNoteType(primaryNoteType);
 
     return {
       deckName,
-      sampleSize: actualSampleSize,
-      primaryNoteType,
-      fieldAnalysis,
-      suggestedMappings,
+      noteType: primaryNoteType,
+      fields,
+      sampleSize: cardsInfo.length
     };
   }
 
-  analyzeFieldContent(fieldName: string, samples: string[]): string {
-    const fieldLower = fieldName.toLowerCase();
-    const contentSample = samples.join(' ').toLowerCase();
-
-    // Field name analysis
-    if (fieldLower.includes('expression') || fieldLower.includes('pronunciation')) {
-      return 'English expressions or pronunciation';
-    }
-    if (fieldLower.includes('phonetic') || fieldLower.includes('pronunciation')) {
-      return 'Pronunciation or phonetic information';
-    }
-    if (fieldLower.includes('example') || fieldLower.includes('sentence')) {
-      return 'Usage examples or sample sentences';
-    }
-    if (fieldLower.includes('meaning') || fieldLower.includes('translation')) {
-      return 'Meaning or translation';
-    }
-    if (fieldLower.includes('explanation') || fieldLower.includes('description')) {
-      return 'Detailed explanation or description';
-    }
-    if (fieldLower.includes('grammar')) {
-      return 'Grammar information';
-    }
-    if (fieldLower.includes('synonym') || fieldLower.includes('related')) {
-      return 'Synonyms or related words';
-    }
-    if (fieldLower.includes('collocation')) {
-      return 'Word collocations';
-    }
-
-    // Content analysis
-    if (/\/.*\//.test(contentSample)) {
-      return 'Likely pronunciation symbols';
-    }
-    if (contentSample.includes('example:') || contentSample.includes('usage:')) {
-      return 'Examples or usage demonstrations';
-    }
-    if (samples.some(s => s.length > 100)) {
-      return 'Long detailed explanations';
-    }
-    if (samples.some(s => s.length < 20)) {
-      return 'Short words or phrases';
-    }
-
-    return 'General content (purpose unclear)';
+  async getFieldsForDeck(deckName: string): Promise<DeckConfig> {
+    const analysis = await this.analyzeDeck(deckName, 1);
+    return {
+      noteType: analysis.noteType,
+      fields: analysis.fields
+    };
   }
 
-  generateReport(analysisResult: DeckAnalysisResult): string {
-    let report = `=== Deck Analysis Report ===\\n\\n`;
-    report += `Deck: ${analysisResult.deckName}\\n`;
-    report += `Sample size: ${analysisResult.sampleSize}\\n`;
-    report += `Primary note type: ${analysisResult.primaryNoteType}\\n\\n`;
-
-    report += `Field Analysis:\\n`;
-    for (const [field, analysis] of Object.entries(analysisResult.fieldAnalysis)) {
-      report += `- ${field}: ${analysis}\\n`;
-    }
-
-    report += `\\nSuggested Semantic Mappings:\\n`;
-    if (Object.keys(analysisResult.suggestedMappings).length === 0) {
-      report += `No semantic mappings suggested\\n`;
-    } else {
-      for (const [semantic, field] of Object.entries(analysisResult.suggestedMappings)) {
-        report += `- ${semantic} → ${field}\\n`;
-      }
-    }
-
-    return report;
-  }
-
-  getFieldSamples(cards: AnkiCard[]): Record<string, string[]> {
-    const fieldSamples: Record<string, string[]> = {};
-
-    for (const card of cards) {
-      for (const [fieldName, fieldData] of Object.entries(card.fields)) {
-        if (!fieldSamples[fieldName]) {
-          fieldSamples[fieldName] = [];
-        }
-
-        if (fieldData.value && fieldData.value.trim() !== '') {
-          const truncatedValue = fieldData.value.length > 50 
-            ? fieldData.value.substring(0, 50) 
-            : fieldData.value;
-          fieldSamples[fieldName].push(truncatedValue);
-        }
-      }
-    }
-
-    return fieldSamples;
+  private async getFieldsForNoteType(noteTypeName: string): Promise<readonly string[]> {
+    const fields = await this.ankiClient.getModelFieldNames(noteTypeName);
+    return fields;
   }
 
   private getPrimaryNoteType(cards: AnkiCard[]): string {
     const noteTypeCounts: Record<string, number> = {};
 
     for (const card of cards) {
-      noteTypeCounts[card.modelName] = (noteTypeCounts[card.modelName] || 0) + 1;
+      if (card.modelName) {
+        noteTypeCounts[card.modelName] = (noteTypeCounts[card.modelName] || 0) + 1;
+      }
     }
 
     let primaryType = '';
@@ -149,13 +70,17 @@ export class DeckAnalyzer {
     return primaryType;
   }
 
-  private analyzeFields(fieldSamples: Record<string, string[]>): Record<string, string> {
-    const analysis: Record<string, string> = {};
+  generateReport(analysisResult: DeckAnalysisResult): string {
+    let report = `=== Deck Analysis Report ===\\n\\n`;
+    report += `Deck: ${analysisResult.deckName}\\n`;
+    report += `Note Type: ${analysisResult.noteType}\\n`;
+    report += `Sample size: ${analysisResult.sampleSize}\\n\\n`;
 
-    for (const [fieldName, samples] of Object.entries(fieldSamples)) {
-      analysis[fieldName] = this.analyzeFieldContent(fieldName, samples);
+    report += `Fields:\\n`;
+    for (const field of analysisResult.fields) {
+      report += `- ${field}\\n`;
     }
 
-    return analysis;
+    return report;
   }
 }

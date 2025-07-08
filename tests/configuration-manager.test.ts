@@ -1,230 +1,436 @@
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { ConfigurationManager } from '../src/services/configuration-manager.js';
-import type { UserConfig } from '../src/types/index.js';
 import * as fs from 'fs/promises';
-import * as path from 'path';
 import * as os from 'os';
+import * as path from 'path';
+import type { UserConfigNew, DeckConfig } from '../src/types/index.js';
 
-// Mock fs and os modules
 jest.mock('fs/promises');
 jest.mock('os');
 
-const mockFs = fs as jest.Mocked<typeof fs>;
-const mockOs = os as jest.Mocked<typeof os>;
+const mockedFs = fs as jest.Mocked<typeof fs>;
+const mockedOs = os as jest.Mocked<typeof os>;
 
 describe('ConfigurationManager', () => {
   let configManager: ConfigurationManager;
-  const mockHomedir = '/home/testuser';
-  
-  beforeAll(() => {
-    mockOs.homedir.mockReturnValue(mockHomedir);
-  });
+  const mockHomedir = '/mock/home';
+  const configPath = path.join(mockHomedir, '.config', 'anki-kashikoi-mcp', 'config.json');
 
   beforeEach(() => {
-    mockFs.readFile.mockClear();
-    mockFs.writeFile.mockClear();
-    mockFs.mkdir.mockClear();
+    jest.clearAllMocks();
+    mockedOs.homedir.mockReturnValue(mockHomedir);
     configManager = new ConfigurationManager();
   });
 
-  const getExpectedConfigPath = (): string => {
-    const configDir = path.join(mockHomedir, '.config');
-    return path.join(configDir, 'anki-kashikoi-mcp', 'config.json');
-  };
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
   describe('constructor', () => {
-    it('should initialize with default config path using home directory', () => {
-      expect(configManager).toBeDefined();
+    it('should set config file path correctly', () => {
+      expect(configManager.getConfigPath()).toBe(configPath);
     });
-
   });
 
   describe('loadConfig', () => {
-    it('should load existing configuration from file', async () => {
-      const mockConfig: UserConfig = {
-        preferredDeck: 'CustomDeck',
-        preferredNoteType: 'CustomType',
-        fieldMappings: {
-          primary: 'Front',
-          secondary: 'Back',
+    it('should load and parse valid configuration', async () => {
+      const mockConfig: UserConfigNew = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading', 'Meaning', 'Sentence']
+          },
+          'Medical': {
+            noteType: 'Medical Card',
+            fields: ['Term', 'Definition', 'Category']
+          }
         },
+        defaultDeck: 'Japanese'
       };
 
-      mockFs.readFile.mockResolvedValueOnce(JSON.stringify(mockConfig));
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(mockConfig));
 
-      const result = await configManager.loadConfig();
+      const config = await configManager.loadConfig();
 
-      expect(mockFs.readFile).toHaveBeenCalledWith(getExpectedConfigPath(), 'utf-8');
-      expect(result).toEqual(mockConfig);
+      expect(config).toEqual(mockConfig);
+      expect(mockedFs.readFile).toHaveBeenCalledWith(configPath, 'utf-8');
     });
 
-    it('should return default configuration when file does not exist', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-      mockFs.readFile.mockRejectedValueOnce(new Error('ENOENT: no such file or directory'));
+    it('should return default config when file does not exist', async () => {
+      mockedFs.readFile.mockRejectedValue(new Error('ENOENT: no such file or directory'));
 
-      const result = await configManager.loadConfig();
+      const config = await configManager.loadConfig();
 
-      const expectedDefault: UserConfig = {
-        preferredDeck: 'Default',
-        preferredNoteType: 'Basic',
-        fieldMappings: {
-          primary: 'Front',
-          secondary: 'Back',
+      expect(config).toEqual({
+        decks: {
+          'Default': {
+            noteType: 'Basic',
+            fields: ['Front', 'Back']
+          }
         },
-      };
-
-      expect(result).toEqual(expectedDefault);
-      consoleErrorSpy.mockRestore();
+        defaultDeck: 'Default'
+      });
     });
 
-    it('should return default configuration when file contains invalid JSON', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-      mockFs.readFile.mockResolvedValueOnce('invalid json content');
+    it('should return default config when JSON is invalid', async () => {
+      mockedFs.readFile.mockResolvedValue('invalid json');
 
-      const result = await configManager.loadConfig();
+      const config = await configManager.loadConfig();
 
-      const expectedDefault: UserConfig = {
-        preferredDeck: 'Default',
-        preferredNoteType: 'Basic',
-        fieldMappings: {
-          primary: 'Front',
-          secondary: 'Back',
+      expect(config).toEqual({
+        decks: {
+          'Default': {
+            noteType: 'Basic',
+            fields: ['Front', 'Back']
+          }
         },
-      };
-
-      expect(result).toEqual(expectedDefault);
-      consoleErrorSpy.mockRestore();
+        defaultDeck: 'Default'
+      });
     });
 
-    it('should handle file system errors gracefully', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-      mockFs.readFile.mockRejectedValueOnce(new Error('Permission denied'));
-
-      const result = await configManager.loadConfig();
-
-      const expectedDefault: UserConfig = {
-        preferredDeck: 'Default',
-        preferredNoteType: 'Basic',
-        fieldMappings: {
-          primary: 'Front',
-          secondary: 'Back',
-        },
+    it('should return default config when file format is invalid', async () => {
+      const invalidConfig = {
+        // Missing required 'decks' property
+        defaultDeck: 'Japanese'
       };
 
-      expect(result).toEqual(expectedDefault);
-      consoleErrorSpy.mockRestore();
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(invalidConfig));
+
+      const config = await configManager.loadConfig();
+
+      expect(config).toEqual({
+        decks: {
+          'Default': {
+            noteType: 'Basic',
+            fields: ['Front', 'Back']
+          }
+        },
+        defaultDeck: 'Default'
+      });
     });
   });
 
   describe('saveConfig', () => {
-    it('should save configuration to file', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-      const config: UserConfig = {
-        preferredDeck: 'TestDeck',
-        preferredNoteType: 'TestType',
-        fieldMappings: {
-          question: 'Question',
-          answer: 'Answer',
+    it('should create directory and save configuration', async () => {
+      const config: UserConfigNew = {
+        decks: {
+          'Spanish': {
+            noteType: 'Basic',
+            fields: ['Front', 'Back', 'Extra']
+          }
         },
+        defaultDeck: 'Spanish'
       };
 
-      mockFs.mkdir.mockResolvedValueOnce(undefined);
-      mockFs.writeFile.mockResolvedValueOnce();
+      mockedFs.mkdir.mockResolvedValue(undefined);
+      mockedFs.writeFile.mockResolvedValue(undefined);
 
       await configManager.saveConfig(config);
 
-      const expectedConfigPath = getExpectedConfigPath();
-      const expectedConfigDir = path.dirname(expectedConfigPath);
-      expect(mockFs.mkdir).toHaveBeenCalledWith(expectedConfigDir, { recursive: true });
-      expect(mockFs.writeFile).toHaveBeenCalledWith(
-        expectedConfigPath,
+      expect(mockedFs.mkdir).toHaveBeenCalledWith(
+        path.dirname(configPath),
+        { recursive: true }
+      );
+      expect(mockedFs.writeFile).toHaveBeenCalledWith(
+        configPath,
         JSON.stringify(config, null, 2),
         'utf-8'
       );
-      consoleErrorSpy.mockRestore();
     });
 
-    it('should throw error when write fails', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-      const config: UserConfig = {
-        preferredDeck: 'TestDeck',
-        preferredNoteType: 'TestType',
-        fieldMappings: {},
+    it('should throw error when save fails', async () => {
+      const config: UserConfigNew = {
+        decks: {}
       };
 
-      mockFs.mkdir.mockResolvedValueOnce(undefined);
-      mockFs.writeFile.mockRejectedValueOnce(new Error('Write permission denied'));
+      mockedFs.mkdir.mockResolvedValue(undefined);
+      mockedFs.writeFile.mockRejectedValue(new Error('Permission denied'));
 
-      await expect(configManager.saveConfig(config)).rejects.toThrow(
-        'Failed to save configuration: Write permission denied'
-      );
-      consoleErrorSpy.mockRestore();
-    });
-
-    it('should throw error when directory creation fails', async () => {
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
-      const config: UserConfig = {
-        preferredDeck: 'TestDeck',
-        preferredNoteType: 'TestType',
-        fieldMappings: {},
-      };
-
-      mockFs.mkdir.mockRejectedValueOnce(new Error('Directory creation failed'));
-
-      await expect(configManager.saveConfig(config)).rejects.toThrow(
-        'Failed to save configuration: Directory creation failed'
-      );
-      consoleErrorSpy.mockRestore();
+      await expect(configManager.saveConfig(config)).rejects.toThrow('Failed to save configuration: Permission denied');
     });
   });
 
-  describe('getConfigPath', () => {
-    it('should return the configuration file path', () => {
-      const configPath = configManager.getConfigPath();
-      expect(configPath).toBe(getExpectedConfigPath());
+  describe('addDeckConfig', () => {
+    it('should add new deck configuration', async () => {
+      const existingConfig: UserConfigNew = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading', 'Meaning']
+          }
+        }
+      };
+
+      const newDeckConfig: DeckConfig = {
+        noteType: 'Spanish Card',
+        fields: ['Spanish', 'English', 'Example']
+      };
+
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(existingConfig));
+      mockedFs.mkdir.mockResolvedValue(undefined);
+      mockedFs.writeFile.mockResolvedValue(undefined);
+
+      await configManager.addDeckConfig('Spanish', newDeckConfig);
+
+      expect(mockedFs.writeFile).toHaveBeenCalledWith(
+        configPath,
+        JSON.stringify({
+          decks: {
+            'Japanese': existingConfig.decks['Japanese'],
+            'Spanish': newDeckConfig
+          }
+        }, null, 2),
+        'utf-8'
+      );
     });
 
+    it('should overwrite existing deck configuration', async () => {
+      const existingConfig: UserConfigNew = {
+        decks: {
+          'Japanese': {
+            noteType: 'Basic',
+            fields: ['Front', 'Back']
+          }
+        }
+      };
+
+      const updatedDeckConfig: DeckConfig = {
+        noteType: 'Japanese (recognition)',
+        fields: ['Expression', 'Reading', 'Meaning', 'Sentence']
+      };
+
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(existingConfig));
+      mockedFs.mkdir.mockResolvedValue(undefined);
+      mockedFs.writeFile.mockResolvedValue(undefined);
+
+      await configManager.addDeckConfig('Japanese', updatedDeckConfig);
+
+      expect(mockedFs.writeFile).toHaveBeenCalledWith(
+        configPath,
+        JSON.stringify({
+          decks: {
+            'Japanese': updatedDeckConfig
+          }
+        }, null, 2),
+        'utf-8'
+      );
+    });
+  });
+
+  describe('setDefaultDeck', () => {
+    it('should set default deck', async () => {
+      const config: UserConfigNew = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading', 'Meaning']
+          },
+          'Spanish': {
+            noteType: 'Basic',
+            fields: ['Front', 'Back']
+          }
+        },
+        defaultDeck: 'Japanese'
+      };
+
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(config));
+      mockedFs.mkdir.mockResolvedValue(undefined);
+      mockedFs.writeFile.mockResolvedValue(undefined);
+
+      await configManager.setDefaultDeck('Spanish');
+
+      expect(mockedFs.writeFile).toHaveBeenCalledWith(
+        configPath,
+        JSON.stringify({
+          ...config,
+          defaultDeck: 'Spanish'
+        }, null, 2),
+        'utf-8'
+      );
+    });
+
+    it('should add default deck when none exists', async () => {
+      const config: UserConfigNew = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading', 'Meaning']
+          }
+        }
+      };
+
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(config));
+      mockedFs.mkdir.mockResolvedValue(undefined);
+      mockedFs.writeFile.mockResolvedValue(undefined);
+
+      await configManager.setDefaultDeck('Japanese');
+
+      expect(mockedFs.writeFile).toHaveBeenCalledWith(
+        configPath,
+        JSON.stringify({
+          ...config,
+          defaultDeck: 'Japanese'
+        }, null, 2),
+        'utf-8'
+      );
+    });
+  });
+
+  describe('getDeckConfig', () => {
+    it('should return deck configuration for existing deck', async () => {
+      const config: UserConfigNew = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading', 'Meaning']
+          }
+        }
+      };
+
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(config));
+
+      const deckConfig = await configManager.getDeckConfig('Japanese');
+
+      expect(deckConfig).toEqual({
+        noteType: 'Japanese (recognition)',
+        fields: ['Expression', 'Reading', 'Meaning']
+      });
+    });
+
+    it('should return undefined for non-existent deck', async () => {
+      const config: UserConfigNew = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading', 'Meaning']
+          }
+        }
+      };
+
+      mockedFs.readFile.mockResolvedValue(JSON.stringify(config));
+
+      const deckConfig = await configManager.getDeckConfig('Spanish');
+
+      expect(deckConfig).toBeUndefined();
+    });
   });
 
   describe('validateConfig', () => {
-    it('should return true for valid configuration', () => {
-      const validConfig: UserConfig = {
-        preferredDeck: 'ValidDeck',
-        preferredNoteType: 'ValidType',
-        fieldMappings: {
-          primary: 'Front',
-          secondary: 'Back',
+    it('should validate correct configuration', () => {
+      const validConfig = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading']
+          }
         },
+        defaultDeck: 'Japanese'
       };
 
-      const result = configManager.validateConfig(validConfig);
-      expect(result).toBe(true);
+      expect(configManager.validateConfig(validConfig)).toBe(true);
     });
 
-    it('should return false for configuration with missing required fields', () => {
+    it('should validate configuration without defaultDeck', () => {
+      const validConfig = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading']
+          }
+        }
+      };
+
+      expect(configManager.validateConfig(validConfig)).toBe(true);
+    });
+
+    it('should reject null configuration', () => {
+      expect(configManager.validateConfig(null)).toBe(false);
+    });
+
+    it('should reject non-object configuration', () => {
+      expect(configManager.validateConfig('string')).toBe(false);
+      expect(configManager.validateConfig(123)).toBe(false);
+      expect(configManager.validateConfig(true)).toBe(false);
+    });
+
+    it('should reject configuration without decks property', () => {
       const invalidConfig = {
-        preferredDeck: 'ValidDeck',
-        // missing preferredNoteType
-        fieldMappings: {},
-      } as UserConfig;
+        defaultDeck: 'Japanese'
+      };
 
-      const result = configManager.validateConfig(invalidConfig);
-      expect(result).toBe(false);
+      expect(configManager.validateConfig(invalidConfig)).toBe(false);
     });
 
-    it('should return false for configuration with invalid types', () => {
+    it('should reject configuration with non-object decks', () => {
+      expect(configManager.validateConfig({ decks: 'string' })).toBe(false);
+      expect(configManager.validateConfig({ decks: [] })).toBe(false);
+      expect(configManager.validateConfig({ decks: null })).toBe(false);
+    });
+
+    it('should reject configuration with invalid deck config', () => {
       const invalidConfig = {
-        preferredDeck: 123, // should be string
-        preferredNoteType: 'ValidType',
-        fieldMappings: {},
-      } as unknown as UserConfig;
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)'
+            // Missing fields
+          }
+        }
+      };
 
-      const result = configManager.validateConfig(invalidConfig);
-      expect(result).toBe(false);
+      expect(configManager.validateConfig(invalidConfig)).toBe(false);
     });
 
-    it('should return false for null or undefined config', () => {
-      expect(configManager.validateConfig(null as unknown as UserConfig)).toBe(false);
-      expect(configManager.validateConfig(undefined as unknown as UserConfig)).toBe(false);
+    it('should reject configuration with non-string noteType', () => {
+      const invalidConfig = {
+        decks: {
+          'Japanese': {
+            noteType: 123,
+            fields: ['Expression', 'Reading']
+          }
+        }
+      };
+
+      expect(configManager.validateConfig(invalidConfig)).toBe(false);
+    });
+
+    it('should reject configuration with non-array fields', () => {
+      const invalidConfig = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: 'Expression,Reading'
+          }
+        }
+      };
+
+      expect(configManager.validateConfig(invalidConfig)).toBe(false);
+    });
+
+    it('should reject configuration with non-string field elements', () => {
+      const invalidConfig = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 123, 'Meaning']
+          }
+        }
+      };
+
+      expect(configManager.validateConfig(invalidConfig)).toBe(false);
+    });
+
+    it('should reject configuration with non-string defaultDeck', () => {
+      const invalidConfig = {
+        decks: {
+          'Japanese': {
+            noteType: 'Japanese (recognition)',
+            fields: ['Expression', 'Reading']
+          }
+        },
+        defaultDeck: 123
+      };
+
+      expect(configManager.validateConfig(invalidConfig)).toBe(false);
     });
   });
 });
