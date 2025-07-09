@@ -12,5 +12,4 @@ export interface UserConfigNew {
 export interface AddCardParams {
   readonly deck?: string;
   readonly content: Record<string, string>;
-  readonly tags?: readonly string[];
 }

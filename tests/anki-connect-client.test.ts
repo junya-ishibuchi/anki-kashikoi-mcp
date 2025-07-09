@@ -217,7 +217,6 @@ describe('AnkiConnectClient', () => {
         deckName: 'Default',
         modelName: 'Basic',
         fields: { Front: 'Question', Back: 'Answer' },
-        tags: ['test'],
       };
 
       const result = await client.addNote(note);

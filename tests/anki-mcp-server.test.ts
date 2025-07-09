@@ -140,8 +140,7 @@ describe('AnkiMCPServer', () => {
           content: {
             Front: 'Question',
             Back: 'Answer'
-          },
-          tags: ['test', 'demo']
+          }
         });
 
         expect(result.content[0].text).toContain('Card added successfully!');

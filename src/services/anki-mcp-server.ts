@@ -112,8 +112,7 @@ export class AnkiMCPServer {
       const noteId = await this.ankiClient.addNote({
         deckName,
         modelName: deckConfig.noteType,
-        fields,
-        tags: params.tags || []
+        fields
       });
 
       return {
@@ -218,11 +217,6 @@ export class AnkiMCPServer {
               deck: {
                 type: 'string',
                 description: 'Deck name (optional, uses default if not specified)',
-              },
-              tags: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Tags for the card',
               },
             },
             required: ['content'],

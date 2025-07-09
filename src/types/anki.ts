@@ -18,7 +18,6 @@ export interface AnkiNote {
   readonly deckName: string;
   readonly modelName: string;
   readonly fields: Record<string, string>;
-  readonly tags?: readonly string[];
 }
 
 export interface AnkiCard {
