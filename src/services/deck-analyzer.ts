@@ -2,10 +2,8 @@ import type { AnkiConnectClient } from './anki-connect-client.js';
 import type { AnkiCard, DeckConfig } from '../types/index.js';
 
 export interface DeckAnalysisResult {
-  readonly deckName: string;
   readonly noteType: string;
   readonly fields: readonly string[];
-  readonly sampleSize: number;
 }
 
 export class DeckAnalyzer {
@@ -28,19 +26,13 @@ export class DeckAnalyzer {
     const fields = await this.getFieldsForNoteType(primaryNoteType);
 
     return {
-      deckName,
       noteType: primaryNoteType,
-      fields,
-      sampleSize: cardsInfo.length
+      fields
     };
   }
 
   async getFieldsForDeck(deckName: string): Promise<DeckConfig> {
-    const analysis = await this.analyzeDeck(deckName, 1);
-    return {
-      noteType: analysis.noteType,
-      fields: analysis.fields
-    };
+    return await this.analyzeDeck(deckName, 1);
   }
 
   private async getFieldsForNoteType(noteTypeName: string): Promise<readonly string[]> {
@@ -70,17 +62,4 @@ export class DeckAnalyzer {
     return primaryType;
   }
 
-  generateReport(analysisResult: DeckAnalysisResult): string {
-    let report = `=== Deck Analysis Report ===\\n\\n`;
-    report += `Deck: ${analysisResult.deckName}\\n`;
-    report += `Note Type: ${analysisResult.noteType}\\n`;
-    report += `Sample size: ${analysisResult.sampleSize}\\n\\n`;
-
-    report += `Fields:\\n`;
-    for (const field of analysisResult.fields) {
-      report += `- ${field}\\n`;
-    }
-
-    return report;
-  }
 }

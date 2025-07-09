@@ -60,10 +60,8 @@ describe('DeckAnalyzer', () => {
       const result = await deckAnalyzer.analyzeDeck('Japanese Vocabulary', 5);
 
       expect(result).toEqual({
-        deckName: 'Japanese Vocabulary',
         noteType: 'Japanese (recognition)',
-        fields: ['Expression', 'Reading', 'Meaning', 'Sentence'],
-        sampleSize: 2
+        fields: ['Expression', 'Reading', 'Meaning', 'Sentence']
       });
       expect(mockAnkiClient.findCards).toHaveBeenCalledWith('deck:"Japanese Vocabulary"');
       expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1, 2, 3, 4, 5]);
@@ -109,9 +107,8 @@ describe('DeckAnalyzer', () => {
       ]);
       mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
-      const result = await deckAnalyzer.analyzeDeck('Small Deck', 10);
+      await deckAnalyzer.analyzeDeck('Small Deck', 10);
 
-      expect(result.sampleSize).toBe(2);
       expect(mockAnkiClient.getCardsInfo).toHaveBeenCalledWith([1, 2]);
     });
 
@@ -167,42 +164,6 @@ describe('DeckAnalyzer', () => {
     });
   });
 
-  describe('generateReport', () => {
-    it('should generate formatted report', () => {
-      const analysisResult = {
-        deckName: 'Japanese Vocabulary',
-        noteType: 'Japanese (recognition)',
-        fields: ['Expression', 'Reading', 'Meaning', 'Sentence'],
-        sampleSize: 5
-      };
-
-      const report = deckAnalyzer.generateReport(analysisResult);
-
-      expect(report).toContain('=== Deck Analysis Report ===');
-      expect(report).toContain('Deck: Japanese Vocabulary');
-      expect(report).toContain('Note Type: Japanese (recognition)');
-      expect(report).toContain('Sample size: 5');
-      expect(report).toContain('Fields:');
-      expect(report).toContain('- Expression');
-      expect(report).toContain('- Reading');
-      expect(report).toContain('- Meaning');
-      expect(report).toContain('- Sentence');
-    });
-
-    it('should handle empty fields array', () => {
-      const analysisResult = {
-        deckName: 'Empty Deck',
-        noteType: 'Basic',
-        fields: [],
-        sampleSize: 0
-      };
-
-      const report = deckAnalyzer.generateReport(analysisResult);
-
-      expect(report).toContain('Fields:');
-      expect(report).toContain('Sample size: 0');
-    });
-  });
 
   describe('edge cases', () => {
     it('should handle cards with missing modelName gracefully', async () => {
