@@ -44,6 +44,16 @@ export interface AnkiCard {
   readonly usn: number;
 }
 
+export interface AnkiNoteInfo {
+  readonly noteId: number;
+  readonly profileName: string;
+  readonly modelName: string;
+  readonly tags: readonly string[];
+  readonly fields: Record<string, { value: string; order: number }>;
+  readonly mod: number;
+  readonly cards: readonly number[];
+}
+
 export interface DeckInfo {
   readonly name: string;
   readonly id: number;

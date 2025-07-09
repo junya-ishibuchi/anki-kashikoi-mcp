@@ -1,5 +1,5 @@
 import { AnkiConnectClient } from '../src/services/anki-connect-client.js';
-import type { AnkiConnectResponse, AnkiNoteType, AnkiNote } from '../src/types/index.js';
+import type { AnkiConnectResponse, AnkiNoteType, AnkiNote, AnkiNoteInfo } from '../src/types/index.js';
 
 // Mock fetch globally
 global.fetch = jest.fn();
@@ -234,64 +234,38 @@ describe('AnkiConnectClient', () => {
     });
   });
 
-  describe('findCards', () => {
-    it('should find cards and return card IDs', async () => {
-      const mockResponse: AnkiConnectResponse<number[]> = {
-        result: [1, 2, 3],
-        error: null,
-      };
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse,
-      } as Response);
-
-      const result = await client.findCards('deck:"Default"');
-
-      expect(result).toEqual([1, 2, 3]);
-      expect(mockFetch).toHaveBeenCalledWith(mockUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'findCards',
-          version: 6,
-          params: { query: 'deck:"Default"' },
-        }),
-      });
-    });
-  });
-
-  describe('getCardsInfo', () => {
-    it('should get cards info and return card details', async () => {
-      const mockCardInfo = {
-        cardId: 1,
-        fields: { Front: { value: 'Question', order: 0 } },
+  describe('getNotesInfo', () => {
+    it('should get notes info by query', async () => {
+      const mockNoteInfo: AnkiNoteInfo = {
+        noteId: 101,
+        profileName: 'User1',
         modelName: 'Basic',
-        deckName: 'Default',
+        tags: ['tag1', 'tag2'],
+        fields: { 
+          Front: { value: 'Question', order: 0 },
+          Back: { value: 'Answer', order: 1 }
+        },
+        mod: 1609459200,
+        cards: [1, 2]
       };
 
-      const mockResponse: AnkiConnectResponse<typeof mockCardInfo[]> = {
-        result: [mockCardInfo],
+      // Mock the getNotesInfo response
+      const mockGetNotesInfoResponse: AnkiConnectResponse<AnkiNoteInfo[]> = {
+        result: [mockNoteInfo],
         error: null,
       };
 
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => mockResponse,
-      } as Response);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => mockGetNotesInfoResponse,
+        } as Response);
 
-      const result = await client.getCardsInfo([1]);
+      const result = await client.getNotesInfo({ query: 'deck:"Default"' });
 
-      expect(result).toEqual([mockCardInfo]);
-      expect(mockFetch).toHaveBeenCalledWith(mockUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'cardsInfo',
-          version: 6,
-          params: { cards: [1] },
-        }),
-      });
+      expect(result).toEqual([mockNoteInfo]);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 });

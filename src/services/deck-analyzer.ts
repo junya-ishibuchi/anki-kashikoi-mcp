@@ -1,5 +1,5 @@
 import type { AnkiConnectClient } from './anki-connect-client.js';
-import type { AnkiCard, DeckConfig } from '../types/index.js';
+import type { AnkiNoteInfo, DeckConfig } from '../types/index.js';
 
 export interface DeckAnalysisResult {
   readonly noteType: string;
@@ -12,17 +12,16 @@ export class DeckAnalyzer {
   ) {}
 
   async analyzeDeck(deckName: string, sampleSize = 5): Promise<DeckAnalysisResult> {
-    const cardIds = await this.ankiClient.findCards(`deck:"${deckName}"`);
+    const notesInfo = await this.ankiClient.getNotesInfo({ query: `deck:"${deckName}"` });
     
-    if (cardIds.length === 0) {
+    if (notesInfo.length === 0) {
       throw new Error(`Deck "${deckName}" contains no cards`);
     }
 
-    const actualSampleSize = Math.min(sampleSize, cardIds.length);
-    const sampleCardIds = cardIds.slice(0, actualSampleSize);
-    const cardsInfo = await this.ankiClient.getCardsInfo(sampleCardIds);
+    const actualSampleSize = Math.min(sampleSize, notesInfo.length);
+    const sampleNotes = notesInfo.slice(0, actualSampleSize);
 
-    const primaryNoteType = this.getPrimaryNoteType(cardsInfo);
+    const primaryNoteType = this.getPrimaryNoteTypeFromNotes(sampleNotes);
     const fields = await this.getFieldsForNoteType(primaryNoteType);
 
     return {
@@ -40,12 +39,13 @@ export class DeckAnalyzer {
     return fields;
   }
 
-  private getPrimaryNoteType(cards: AnkiCard[]): string {
+
+  private getPrimaryNoteTypeFromNotes(notes: AnkiNoteInfo[]): string {
     const noteTypeCounts: Record<string, number> = {};
 
-    for (const card of cards) {
-      if (card.modelName) {
-        noteTypeCounts[card.modelName] = (noteTypeCounts[card.modelName] || 0) + 1;
+    for (const note of notes) {
+      if (note.modelName) {
+        noteTypeCounts[note.modelName] = (noteTypeCounts[note.modelName] || 0) + 1;
       }
     }
 

@@ -3,7 +3,7 @@ import type {
   AnkiConnectResponse,
   AnkiNoteType,
   AnkiNote,
-  AnkiCard,
+  AnkiNoteInfo,
 } from '../types/index.js';
 
 export class AnkiConnectClient {
@@ -76,12 +76,8 @@ export class AnkiConnectClient {
     return this.sendRequest<number>('addNote', { note });
   }
 
-  async findCards(query: string): Promise<number[]> {
-    return this.sendRequest<number[]>('findCards', { query });
-  }
-
-  async getCardsInfo(cardIds: number[]): Promise<AnkiCard[]> {
-    return this.sendRequest<AnkiCard[]>('cardsInfo', { cards: cardIds });
+  async getNotesInfo(params: { query: string }): Promise<AnkiNoteInfo[]> {
+    return this.sendRequest<AnkiNoteInfo[]>('notesInfo', { query: params.query });
   }
 
   async getModelFieldNames(modelName: string): Promise<string[]> {
