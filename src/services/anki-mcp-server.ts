@@ -74,10 +74,15 @@ export class AnkiMCPServer {
 
     const deckConfig = await this.configManager.getDeckConfig(deckName);
     if (!deckConfig) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Deck "${deckName}" not configured. Please analyze the deck first.`
-      );
+      return {
+        content: [{
+          type: 'text',
+          text: `Deck "${deckName}" is not configured. Please run analyze_deck first.\n\n` +
+                `Available configured decks:\n${this.formatAvailableDecks(config)}\n\n` +
+                `If this is a new deck, use: analyze_deck with deck name "${deckName}"\n` +
+                `If you want to use an existing deck, retry add_card with one of the configured deck names above.`
+        }]
+      };
     }
 
     // Validate that all content fields exist in deck configuration
@@ -85,11 +90,16 @@ export class AnkiMCPServer {
     const invalidFields = contentFields.filter(field => !deckConfig.fields.includes(field));
     
     if (invalidFields.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Invalid fields for deck "${deckName}": ${invalidFields.join(', ')}. ` +
-        `Valid fields are: ${deckConfig.fields.join(', ')}`
-      );
+      return {
+        content: [{
+          type: 'text',
+          text: `Invalid fields for deck "${deckName}": ${invalidFields.join(', ')}\n\n` +
+                `Required fields for this deck:\n${deckConfig.fields.map(f => `- ${f}`).join('\n')}\n\n` +
+                `Example usage:\n` +
+                `{\n${deckConfig.fields.map(f => `  "${f}": "your content here"`).join(',\n')}\n}\n\n` +
+                `Please retry add_card with the correct field structure.`
+        }]
+      };
     }
 
     // Fill missing fields with empty strings
@@ -110,10 +120,11 @@ export class AnkiMCPServer {
         content: [
           {
             type: 'text',
-            text: `Card added successfully!\\n` +
-              `Note ID: ${noteId}\\n` +
-              `Deck: ${deckName}\\n` +
-              `Note type: ${deckConfig.noteType}`,
+            text: `Card added successfully!\n` +
+              `Note ID: ${noteId}\n` +
+              `Deck: ${deckName}\n` +
+              `Note type: ${deckConfig.noteType}\n` +
+              `Fields used: ${Object.keys(fields).join(', ')}`,
           },
         ],
       };
@@ -287,5 +298,18 @@ export class AnkiMCPServer {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('Anki MCP server running on stdio');
+  }
+
+  private formatAvailableDecks(config: any): string {
+    if (Object.keys(config.decks).length === 0) {
+      return "No decks configured yet.";
+    }
+    
+    return Object.entries(config.decks)
+      .map(([name, deckConfig]: [string, any]) => {
+        const defaultMarker = config.defaultDeck === name ? " (default)" : "";
+        return `- ${name}${defaultMarker}: [${deckConfig.fields.join(', ')}]`;
+      })
+      .join('\n');
   }
 }
