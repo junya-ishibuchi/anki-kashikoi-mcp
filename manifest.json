@@ -1,8 +1,10 @@
 {
   "dxt_version": "0.1",
   "name": "anki-kashikoi-mcp",
-  "version": "0.0.1",
-  "description": "Anki MCP server for learning language",
+  "display_name": "Anki Kashikoi MCP Server",
+  "version": "0.1.0",
+  "description": "Intelligent Anki flashcard management with direct field mapping",
+  "long_description": "A Desktop Extension (DXT) for intelligent Anki flashcard management. This MCP server provides direct field mapping capabilities by analyzing existing decks and allowing users to add flashcards using actual field names. Features include deck analysis, auto-configuration, and multi-note type support with persistent configuration storage.",
   "author": {
     "name": "junya-ishibuchi"
   },
@@ -17,15 +19,40 @@
       "env": {}
     }
   },
+  "tools": [
+    {
+      "name": "analyze_deck",
+      "description": "Analyze a deck and save its configuration"
+    },
+    {
+      "name": "add_card",
+      "description": "Add a card to Anki using field names directly"
+    },
+    {
+      "name": "get_configured_decks",
+      "description": "Get information about configured decks"
+    },
+    {
+      "name": "set_default_deck",
+      "description": "Set the default deck for adding cards"
+    }
+  ],
   "keywords": [
-    "Anki",
-    "Language",
-    "Flash card",
-    "English"
+    "anki",
+    "flashcards",
+    "language-learning",
+    "spaced-repetition",
+    "mcp"
   ],
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/junya-ishibuchi/anki-kashikoi-mcp.git"
+    "url": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp.git"
+  },
+  "homepage": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp",
+  "support": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp/issues",
+  "compatibility": {
+    "anki_connect_required": true,
+    "minimum_anki_version": "2.1.0"
   }
 }
