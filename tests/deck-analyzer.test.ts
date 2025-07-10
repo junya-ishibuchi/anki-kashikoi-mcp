@@ -66,7 +66,7 @@ describe('DeckAnalyzer', () => {
       mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
       mockAnkiClient.getModelFieldNames.mockResolvedValue(['Expression', 'Reading', 'Meaning', 'Sentence']);
 
-      const result = await deckAnalyzer.analyzeDeck('Japanese Vocabulary', 5);
+      const result = await deckAnalyzer.analyzeDeck('Japanese Vocabulary');
 
       expect(result).toEqual({
         noteType: 'Japanese (recognition)',
@@ -76,11 +76,11 @@ describe('DeckAnalyzer', () => {
       expect(mockAnkiClient.getModelFieldNames).toHaveBeenCalledWith('Japanese (recognition)');
     });
 
-    it('should handle multiple note types and select the most common', async () => {
+    it('should use the first note type from the deck', async () => {
       const mockNotes: AnkiNoteInfo[] = [
         createMockAnkiNoteInfo({
           noteId: 1,
-          modelName: 'Japanese (recognition)'
+          modelName: 'Basic'
         }),
         createMockAnkiNoteInfo({
           noteId: 2,
@@ -88,19 +88,19 @@ describe('DeckAnalyzer', () => {
         }),
         createMockAnkiNoteInfo({
           noteId: 3,
-          modelName: 'Basic'
+          modelName: 'Japanese (recognition)'
         })
       ];
 
       mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
-      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Expression', 'Reading', 'Meaning', 'Sentence']);
+      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
       const result = await deckAnalyzer.analyzeDeck('Mixed Deck');
 
-      expect(result.noteType).toBe('Japanese (recognition)');
+      expect(result.noteType).toBe('Basic');
     });
 
-    it('should limit sample size to available notes', async () => {
+    it('should use first note regardless of deck size', async () => {
       const mockNotes = [
         createMockAnkiNoteInfo({
           noteId: 1,
@@ -114,7 +114,7 @@ describe('DeckAnalyzer', () => {
       mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
       mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
-      const result = await deckAnalyzer.analyzeDeck('Small Deck', 10);
+      const result = await deckAnalyzer.analyzeDeck('Small Deck');
 
       expect(result.noteType).toBe('Basic');
       expect(mockAnkiClient.getNotesInfo).toHaveBeenCalledWith({ query: 'deck:"Small Deck"' });
@@ -126,10 +126,22 @@ describe('DeckAnalyzer', () => {
       await expect(deckAnalyzer.analyzeDeck('Empty Deck')).rejects.toThrow('Deck "Empty Deck" contains no cards');
     });
 
-    it('should use default sample size of 5', async () => {
-      const mockNotes = Array.from({length: 8}, (_, i) => createMockAnkiNoteInfo({
+    it('should throw error when first note has no model name', async () => {
+      const mockNotes = [
+        {
+          ...createMockAnkiNoteInfo({ noteId: 1 }),
+          modelName: undefined as any
+        }
+      ];
+      mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
+
+      await expect(deckAnalyzer.analyzeDeck('Invalid Deck')).rejects.toThrow('First note in deck has no model name');
+    });
+
+    it('should handle large decks efficiently', async () => {
+      const mockNotes = Array.from({length: 100}, (_, i) => createMockAnkiNoteInfo({
         noteId: i + 1,
-        modelName: 'Basic'
+        modelName: i === 0 ? 'Basic' : 'Other'
       }));
       mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
       mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
@@ -177,7 +189,7 @@ describe('DeckAnalyzer', () => {
 
 
   describe('edge cases', () => {
-    it('should handle notes with missing modelName gracefully', async () => {
+    it('should throw error when first note has empty modelName', async () => {
       const mockNotes = [
         createMockAnkiNoteInfo({
           noteId: 1,
@@ -190,11 +202,8 @@ describe('DeckAnalyzer', () => {
       ];
 
       mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
-      mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
-      const result = await deckAnalyzer.analyzeDeck('Test Deck');
-
-      expect(result.noteType).toBe('Basic');
+      await expect(deckAnalyzer.analyzeDeck('Test Deck')).rejects.toThrow('First note in deck has no model name');
     });
 
     it('should handle API errors appropriately', async () => {
