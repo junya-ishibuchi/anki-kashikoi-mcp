@@ -1,0 +1,31 @@
+{
+  "dxt_version": "0.1",
+  "name": "anki-kashikoi-mcp",
+  "version": "1.0.0",
+  "description": "Anki MCP server for learning language",
+  "author": {
+    "name": "junya-ishibuchi"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "build/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/build/index.js"
+      ],
+      "env": {}
+    }
+  },
+  "keywords": [
+    "Anki",
+    "Language",
+    "Flash card",
+    "English"
+  ],
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/junya-ishibuchi/anki-kashikoi-mcp.git"
+  }
+}
