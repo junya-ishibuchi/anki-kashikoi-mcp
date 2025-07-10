@@ -153,7 +153,7 @@ describe('DeckAnalyzer', () => {
     });
   });
 
-  describe('getFieldsForDeck', () => {
+  describe('analyzeDeck', () => {
     it('should return deck configuration', async () => {
       const mockNotes = [
         createMockAnkiNoteInfo({
@@ -164,7 +164,7 @@ describe('DeckAnalyzer', () => {
       mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
       mockAnkiClient.getModelFieldNames.mockResolvedValue(['Expression', 'Reading', 'Meaning', 'Sentence']);
 
-      const result = await deckAnalyzer.getFieldsForDeck('Japanese');
+      const result = await deckAnalyzer.analyzeDeck('Japanese');
 
       expect(result).toEqual({
         noteType: 'Japanese (recognition)',
@@ -180,7 +180,7 @@ describe('DeckAnalyzer', () => {
       mockAnkiClient.getNotesInfo.mockResolvedValue(mockNotes);
       mockAnkiClient.getModelFieldNames.mockResolvedValue(['Front', 'Back']);
 
-      const result = await deckAnalyzer.getFieldsForDeck('Efficiency Test');
+      const result = await deckAnalyzer.analyzeDeck('Efficiency Test');
 
       expect(result.noteType).toBe('Basic');
       expect(mockAnkiClient.getNotesInfo).toHaveBeenCalledWith({ query: 'deck:"Efficiency Test"' });

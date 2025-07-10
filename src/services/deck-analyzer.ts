@@ -25,8 +25,4 @@ export class DeckAnalyzer {
       fields
     };
   }
-
-  async getFieldsForDeck(deckName: string): Promise<DeckConfig> {
-    return this.analyzeDeck(deckName);
-  }
 }

@@ -39,16 +39,16 @@ export class AnkiMCPServer {
 
   async analyzeDeckAndSaveConfig(deckName: string): Promise<ToolResponse> {
     try {
-      const deckConfig = await this.deckAnalyzer.getFieldsForDeck(deckName);
+      const deckConfig = await this.deckAnalyzer.analyzeDeck(deckName);
       await this.configManager.addDeckConfig(deckName, deckConfig);
       
       return {
         content: [
           {
             type: 'text',
-            text: `Deck "${deckName}" analyzed and configured:\\n` +
-              `Note type: ${deckConfig.noteType}\\n` +
-              `Fields: ${deckConfig.fields.join(', ')}\\n` +
+            text: `Deck "${deckName}" analyzed and configured:\n` +
+              `Note type: ${deckConfig.noteType}\n` +
+              `Fields: ${deckConfig.fields.join(', ')}\n` +
               `Configuration saved to: ${this.configManager.getConfigPath()}`,
           },
         ],
@@ -63,50 +63,19 @@ export class AnkiMCPServer {
 
   async addCard(params: AddCardParams): Promise<ToolResponse> {
     const config = await this.configManager.loadConfig();
-    const deckName = params.deck || config.defaultDeck;
+    const deckName = this.validateDeckName(params.deck, config.defaultDeck);
     
-    if (!deckName) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        'No deck specified and no default deck configured'
-      );
-    }
-
     const deckConfig = await this.configManager.getDeckConfig(deckName);
     if (!deckConfig) {
-      return {
-        content: [{
-          type: 'text',
-          text: `Deck "${deckName}" is not configured. Please run analyze_deck first.\n\n` +
-                `Available configured decks:\n${this.formatAvailableDecks(config)}\n\n` +
-                `If this is a new deck, use: analyze_deck with deck name "${deckName}"\n` +
-                `If you want to use an existing deck, retry add_card with one of the configured deck names above.`
-        }]
-      };
+      return this.createDeckNotConfiguredResponse(deckName, config);
     }
 
-    // Validate that all content fields exist in deck configuration
-    const contentFields = Object.keys(params.content);
-    const invalidFields = contentFields.filter(field => !deckConfig.fields.includes(field));
-    
-    if (invalidFields.length > 0) {
-      return {
-        content: [{
-          type: 'text',
-          text: `Invalid fields for deck "${deckName}": ${invalidFields.join(', ')}\n\n` +
-                `Required fields for this deck:\n${deckConfig.fields.map(f => `- ${f}`).join('\n')}\n\n` +
-                `Example usage:\n` +
-                `{\n${deckConfig.fields.map(f => `  "${f}": "your content here"`).join(',\n')}\n}\n\n` +
-                `Please retry add_card with the correct field structure.`
-        }]
-      };
+    const validationResult = this.validateFieldsForDeck(params.content, deckConfig, deckName);
+    if (validationResult) {
+      return validationResult;
     }
 
-    // Fill missing fields with empty strings
-    const fields = deckConfig.fields.reduce((acc, field) => {
-      acc[field] = params.content[field] || '';
-      return acc;
-    }, {} as Record<string, string>);
+    const fields = this.prepareFieldsForNote(params.content, deckConfig.fields);
 
     try {
       const noteId = await this.ankiClient.addNote({
@@ -115,18 +84,7 @@ export class AnkiMCPServer {
         fields
       });
 
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `Card added successfully!\n` +
-              `Note ID: ${noteId}\n` +
-              `Deck: ${deckName}\n` +
-              `Note type: ${deckConfig.noteType}\n` +
-              `Fields used: ${Object.keys(fields).join(', ')}`,
-          },
-        ],
-      };
+      return this.createAddCardSuccessResponse(noteId, deckName, deckConfig.noteType, fields);
     } catch (error) {
       throw new McpError(
         ErrorCode.InternalError,
@@ -138,23 +96,23 @@ export class AnkiMCPServer {
   async getConfiguredDecks(): Promise<ToolResponse> {
     const config = await this.configManager.loadConfig();
     
-    let info = `=== Configured Decks ===\\n\\n`;
+    let info = `=== Configured Decks ===\n\n`;
     
     if (Object.keys(config.decks).length === 0) {
-      info += 'No decks configured yet. Use analyze_deck to configure a deck.\\n';
+      info += 'No decks configured yet. Use analyze_deck to configure a deck.\n';
     } else {
       for (const [deckName, deckConfig] of Object.entries(config.decks)) {
         info += `Deck: ${deckName}`;
         if (config.defaultDeck === deckName) {
           info += ' (default)';
         }
-        info += `\\n`;
-        info += `  Note type: ${deckConfig.noteType}\\n`;
-        info += `  Fields: ${deckConfig.fields.join(', ')}\\n\\n`;
+        info += `\n`;
+        info += `  Note type: ${deckConfig.noteType}\n`;
+        info += `  Fields: ${deckConfig.fields.join(', ')}\n\n`;
       }
     }
 
-    info += `\\nConfiguration file: ${this.configManager.getConfigPath()}`;
+    info += `\nConfiguration file: ${this.configManager.getConfigPath()}`;
 
     return {
       content: [
@@ -294,6 +252,69 @@ export class AnkiMCPServer {
     console.error('Anki MCP server running on stdio');
   }
 
+  private validateDeckName(deckName: string | undefined, defaultDeck: string | undefined): string {
+    if (!deckName && !defaultDeck) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        'No deck specified and no default deck configured'
+      );
+    }
+    return deckName || defaultDeck!;
+  }
+
+  private createDeckNotConfiguredResponse(deckName: string, config: any): ToolResponse {
+    return {
+      content: [{
+        type: 'text',
+        text: `Deck "${deckName}" is not configured. Please run analyze_deck first.\n\n` +
+              `Available configured decks:\n${this.formatAvailableDecks(config)}\n\n` +
+              `If this is a new deck, use: analyze_deck with deck name "${deckName}"\n` +
+              `If you want to use an existing deck, retry add_card with one of the configured deck names above.`
+      }]
+    };
+  }
+
+  private validateFieldsForDeck(content: Record<string, string>, deckConfig: any, deckName: string): ToolResponse | null {
+    const contentFields = Object.keys(content);
+    const invalidFields = contentFields.filter(field => !deckConfig.fields.includes(field));
+    
+    if (invalidFields.length > 0) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Invalid fields for deck "${deckName}": ${invalidFields.join(', ')}\n\n` +
+                `Required fields for this deck:\n${deckConfig.fields.map((f: string) => `- ${f}`).join('\n')}\n\n` +
+                `Example usage:\n` +
+                `{\n${deckConfig.fields.map((f: string) => `  "${f}": "your content here"`).join(',\n')}\n}\n\n` +
+                `Please retry add_card with the correct field structure.`
+        }]
+      };
+    }
+    return null;
+  }
+
+  private prepareFieldsForNote(content: Record<string, string>, fields: readonly string[]): Record<string, string> {
+    return fields.reduce((acc, field) => {
+      acc[field] = content[field] || '';
+      return acc;
+    }, {} as Record<string, string>);
+  }
+
+  private createAddCardSuccessResponse(noteId: number, deckName: string, noteType: string, fields: Record<string, string>): ToolResponse {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: 'Card added successfully!\n' +
+            `Note ID: ${noteId}\n` +
+            `Deck: ${deckName}\n` +
+            `Note type: ${noteType}\n` +
+            `Fields used: ${Object.keys(fields).join(', ')}`,
+        },
+      ],
+    };
+  }
+
   private formatAvailableDecks(config: any): string {
     if (Object.keys(config.decks).length === 0) {
       return "No decks configured yet.";
@@ -302,7 +323,7 @@ export class AnkiMCPServer {
     return Object.entries(config.decks)
       .map(([name, deckConfig]: [string, any]) => {
         const defaultMarker = config.defaultDeck === name ? " (default)" : "";
-        return `- ${name}${defaultMarker}: [${deckConfig.fields.join(', ')}]`;
+        return '- ' + name + defaultMarker + ': [' + deckConfig.fields.join(', ') + ']';
       })
       .join('\n');
   }
