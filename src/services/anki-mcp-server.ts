@@ -25,7 +25,7 @@ export class AnkiMCPServer {
     this.server = new Server(
       {
         name: 'anki-kashikoi-mcp',
-        version: '1.0.0',
+        version: '0.1.0',
       },
       {
         capabilities: {

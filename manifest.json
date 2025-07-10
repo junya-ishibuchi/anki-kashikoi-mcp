@@ -1,7 +1,7 @@
 {
   "dxt_version": "0.1",
   "name": "anki-kashikoi-mcp",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Anki MCP server for learning language",
   "author": {
     "name": "junya-ishibuchi"
