@@ -56,39 +56,23 @@ describe('ConfigurationManager', () => {
       expect(mockedFs.readFile).toHaveBeenCalledWith(configPath, 'utf-8');
     });
 
-    it('should return default config when file does not exist', async () => {
+    it('should throw error when file does not exist', async () => {
       mockedFs.readFile.mockRejectedValue(new Error('ENOENT: no such file or directory'));
 
-      const config = await configManager.loadConfig();
-
-      expect(config).toEqual({
-        decks: {
-          'Default': {
-            noteType: 'Basic',
-            fields: ['Front', 'Back']
-          }
-        },
-        defaultDeck: 'Default'
-      });
+      await expect(configManager.loadConfig()).rejects.toThrow(
+        `Configuration file not found at: ${configPath}. Please run configuration setup first.`
+      );
     });
 
-    it('should return default config when JSON is invalid', async () => {
+    it('should throw error when JSON is invalid', async () => {
       mockedFs.readFile.mockResolvedValue('invalid json');
 
-      const config = await configManager.loadConfig();
-
-      expect(config).toEqual({
-        decks: {
-          'Default': {
-            noteType: 'Basic',
-            fields: ['Front', 'Back']
-          }
-        },
-        defaultDeck: 'Default'
-      });
+      await expect(configManager.loadConfig()).rejects.toThrow(
+        `Configuration file not found at: ${configPath}. Please run configuration setup first.`
+      );
     });
 
-    it('should return default config when file format is invalid', async () => {
+    it('should throw error when file format is invalid', async () => {
       const invalidConfig = {
         // Missing required 'decks' property
         defaultDeck: 'Japanese'
@@ -96,17 +80,9 @@ describe('ConfigurationManager', () => {
 
       mockedFs.readFile.mockResolvedValue(JSON.stringify(invalidConfig));
 
-      const config = await configManager.loadConfig();
-
-      expect(config).toEqual({
-        decks: {
-          'Default': {
-            noteType: 'Basic',
-            fields: ['Front', 'Back']
-          }
-        },
-        defaultDeck: 'Default'
-      });
+      await expect(configManager.loadConfig()).rejects.toThrow(
+        'Invalid configuration file format'
+      );
     });
   });
 
@@ -215,6 +191,30 @@ describe('ConfigurationManager', () => {
         'utf-8'
       );
     });
+
+    it('should create new config when file does not exist', async () => {
+      const newDeckConfig: DeckConfig = {
+        noteType: 'Basic',
+        fields: ['Front', 'Back']
+      };
+
+      mockedFs.readFile.mockRejectedValue(new Error('ENOENT: no such file or directory'));
+      mockedFs.mkdir.mockResolvedValue(undefined);
+      mockedFs.writeFile.mockResolvedValue(undefined);
+
+      await configManager.addDeckConfig('English', newDeckConfig);
+
+      expect(mockedFs.writeFile).toHaveBeenCalledWith(
+        configPath,
+        JSON.stringify({
+          decks: {
+            'English': newDeckConfig
+          },
+          defaultDeck: 'English'
+        }, null, 2),
+        'utf-8'
+      );
+    });
   });
 
   describe('setDefaultDeck', () => {
@@ -310,6 +310,14 @@ describe('ConfigurationManager', () => {
       mockedFs.readFile.mockResolvedValue(JSON.stringify(config));
 
       const deckConfig = await configManager.getDeckConfig('Spanish');
+
+      expect(deckConfig).toBeUndefined();
+    });
+
+    it('should return undefined when config file does not exist', async () => {
+      mockedFs.readFile.mockRejectedValue(new Error('ENOENT: no such file or directory'));
+
+      const deckConfig = await configManager.getDeckConfig('Japanese');
 
       expect(deckConfig).toBeUndefined();
     });

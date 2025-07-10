@@ -20,11 +20,12 @@ export class ConfigurationManager {
         return config;
       }
       
-      console.error('Invalid configuration file format, using defaults');
-      return this.getDefaultConfig();
+      throw new Error('Invalid configuration file format');
     } catch (error) {
-      console.error('Configuration file not found or unreadable, using defaults');
-      return this.getDefaultConfig();
+      if (error instanceof Error && error.message === 'Invalid configuration file format') {
+        throw error;
+      }
+      throw new Error(`Configuration file not found at: ${this.configFilePath}. Please run configuration setup first.`);
     }
   }
 
@@ -48,7 +49,16 @@ export class ConfigurationManager {
   }
 
   async addDeckConfig(deckName: string, deckConfig: DeckConfig): Promise<void> {
-    const config = await this.loadConfig();
+    let config: UserConfigNew;
+    try {
+      config = await this.loadConfig();
+    } catch (error) {
+      // If no config exists, create a new one
+      config = {
+        decks: {},
+        defaultDeck: deckName
+      };
+    }
     const updatedConfig: UserConfigNew = {
       ...config,
       decks: {
@@ -69,8 +79,12 @@ export class ConfigurationManager {
   }
 
   async getDeckConfig(deckName: string): Promise<DeckConfig | undefined> {
-    const config = await this.loadConfig();
-    return config.decks[deckName];
+    try {
+      const config = await this.loadConfig();
+      return config.decks[deckName];
+    } catch (error) {
+      return undefined;
+    }
   }
 
   getConfigPath(): string {
@@ -117,17 +131,5 @@ export class ConfigurationManager {
       Array.isArray(candidate.fields) &&
       candidate.fields.every((field: unknown) => typeof field === 'string')
     );
-  }
-
-  private getDefaultConfig(): UserConfigNew {
-    return {
-      decks: {
-        'Default': {
-          noteType: 'Basic',
-          fields: ['Front', 'Back']
-        }
-      },
-      defaultDeck: 'Default'
-    };
   }
 }

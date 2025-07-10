@@ -62,7 +62,15 @@ export class AnkiMCPServer {
   }
 
   async addCard(params: AddCardParams): Promise<ToolResponse> {
-    const config = await this.configManager.loadConfig();
+    let config;
+    try {
+      config = await this.configManager.loadConfig();
+    } catch (error) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `No configuration found. Please run analyze_deck first to configure a deck.`
+      );
+    }
     const deckName = this.validateDeckName(params.deck, config.defaultDeck);
     
     const deckConfig = await this.configManager.getDeckConfig(deckName);
@@ -94,7 +102,19 @@ export class AnkiMCPServer {
   }
 
   async getConfiguredDecks(): Promise<ToolResponse> {
-    const config = await this.configManager.loadConfig();
+    let config;
+    try {
+      config = await this.configManager.loadConfig();
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'No configuration found. Please run analyze_deck to configure your first deck.',
+          },
+        ],
+      };
+    }
     
     let info = `=== Configured Decks ===\n\n`;
     
