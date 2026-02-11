@@ -50,9 +50,5 @@
     "url": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp.git"
   },
   "homepage": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp",
-  "support": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp/issues",
-  "compatibility": {
-    "anki_connect_required": true,
-    "minimum_anki_version": "2.1.0"
-  }
+  "support": "https://github.com/junya-ishibuchi/anki-kashikoi-mcp/issues"
 }
